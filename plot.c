@@ -15,6 +15,7 @@
 #include <SDL2/SDL_ttf.h>
 #include <complex.h>
 #include <math.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,15 +27,16 @@
 #define FPS 60
 #define defaultTextSize 18
 #define tolerance 0.01
-unsigned int giterator = 15;
-unsigned int ganimation = 0;
+unsigned short int giterator = 5;
+int ganimation = 100;
 
 int plot(SDL_Renderer *screen, settings *settings);
 int setFunction(function *func, char *name, function *prev, function *next,
-                double (*f)(double, double), SDL_bool visible,
+                long double (*f)(long double, long double), SDL_bool visible,
                 SDL_Colour colour, plotType plotType,
                 functionType functionType);
-
+void renderText(SDL_Renderer *screen, settings *settings, corner corner,
+                char *textInfo);
 SDL_Rect textRect = {
     .h = defaultTextSize, .w = defaultTextSize, .x = 10, .y = 10};
 SDL_Color defaultColor = {.r = 0xAA, .g = 0xAA, .b = 0xAA, .a = 0xAA};
@@ -82,8 +84,8 @@ SDL_Color hue2rgb(float h, float s, float l) {
   return rgb;
 }
 void eventHandler(SDL_Event *events, settings *settings, SDL_Renderer *screen) {
-  double width = fabs(settings->x_end - settings->x_start);
-  double height = fabs(settings->y_end - settings->y_start);
+  double width = fabsl(settings->x_end - settings->x_start);
+  double height = fabsl(settings->y_end - settings->y_start);
   while (SDL_PollEvent(events)) {
     switch (events->type) // checks wich type of event
     {
@@ -91,17 +93,17 @@ void eventHandler(SDL_Event *events, settings *settings, SDL_Renderer *screen) {
       settings->running = SDL_FALSE;
     case SDL_MOUSEWHEEL:
       if (events->wheel.y < 0) {
-        settings->y_end += 0.05 * settings->y_end;
-        settings->x_end += 0.05 * settings->y_end;
-        settings->x_start -= 0.05 * settings->x_start;
-        settings->y_start -= 0.05 * settings->y_start;
+        settings->y_end += 0.05 * height;
+        settings->x_end += 0.05 * width;
+        settings->x_start -= 0.05 * width;
+        settings->y_start -= 0.05 * height;
         break;
       }
       if (events->wheel.y > 0) {
-        settings->y_end -= 0.05 * settings->y_end;
-        settings->x_end += 0.05 * settings->x_end;
-        settings->x_start += 0.05 * settings->x_start;
-        settings->y_start += 0.05 * settings->y_start;
+        settings->y_end -= 0.05 * height;
+        settings->x_end -= 0.05 * width;
+        settings->x_start += 0.05 * width;
+        settings->y_start += 0.05 * height;
         break;
       }
 
@@ -109,8 +111,8 @@ void eventHandler(SDL_Event *events, settings *settings, SDL_Renderer *screen) {
       // ADD GRAB
       double projectedMouseX, projectedMouseY, projectedMouseX2,
           projectedMouseY2;
-      double plotterWidth = fabs(settings->x_end - settings->x_start);
-      double plotterHeight = fabs(settings->y_end - settings->y_start);
+      double plotterWidth = fabsl(settings->x_end - settings->x_start);
+      double plotterHeight = fabsl(settings->y_end - settings->y_start);
     case SDL_MOUSEBUTTONDOWN:
       switch (events->button.button) {
       case SDL_BUTTON_LEFT:
@@ -133,10 +135,10 @@ void eventHandler(SDL_Event *events, settings *settings, SDL_Renderer *screen) {
             -(((double)settings->mouseY2 / settings->screenHeight) *
                   plotterHeight -
               settings->y_end);
-        settings->y_end = fmax(projectedMouseY, projectedMouseY2);
-        settings->x_end = fmax(projectedMouseX, projectedMouseX2);
-        settings->x_start = fmin(projectedMouseX, projectedMouseX2);
-        settings->y_start = fmin(projectedMouseY, projectedMouseY2);
+        settings->y_start = fminl(projectedMouseY,projectedMouseY2);
+        settings->y_end = fmaxl(projectedMouseY,projectedMouseY2);
+        settings->x_start = fminl(projectedMouseX,projectedMouseX2);
+        settings->x_end = fmaxl(projectedMouseX,projectedMouseX2);
         break;
       default:
         break;
@@ -180,7 +182,7 @@ void eventHandler(SDL_Event *events, settings *settings, SDL_Renderer *screen) {
     giterator++;
   }
   if (state[SDL_SCANCODE_J]) {
-    giterator--;
+    (giterator > 0) ? giterator-- : giterator;
   }
   if (state[SDL_SCANCODE_L]) {
     ganimation++;
@@ -189,14 +191,17 @@ void eventHandler(SDL_Event *events, settings *settings, SDL_Renderer *screen) {
     ganimation--;
   }
   if (state[SDL_SCANCODE_S]) {
-  char *text=malloc(sizeof(char));
-  sprintf(text,"screeshot%d.bmp",SDL_GetTicks());
-  SDL_Surface *sshot = SDL_CreateRGBSurface(0, settings->screenWidth, settings->screenHeight, 32,
-  0x00ff0000, 0x0000ff00, 0x000000ff, 0xff000000);
-  SDL_RenderReadPixels(screen, NULL, SDL_PIXELFORMAT_ARGB8888, sshot->pixels,
-  sshot->pitch); SDL_SaveBMP(sshot, text); SDL_FreeSurface(sshot);
-  free(text);
-}
+    char *text = malloc(sizeof(char));
+    sprintf(text, "screeshot%d.bmp", SDL_GetTicks());
+    SDL_Surface *sshot = SDL_CreateRGBSurface(
+        0, settings->screenWidth, settings->screenHeight, 32, 0x00ff0000,
+        0x0000ff00, 0x000000ff, 0xff000000);
+    SDL_RenderReadPixels(screen, NULL, SDL_PIXELFORMAT_ARGB8888, sshot->pixels,
+                         sshot->pitch);
+    SDL_SaveBMP(sshot, text);
+    SDL_FreeSurface(sshot);
+    free(text);
+  }
 }
 SDL_Texture *textToSurface(char *text, SDL_Renderer *screen, SDL_Rect *textRect,
                            SDL_Color fg, SDL_Color bg) {
@@ -209,19 +214,20 @@ SDL_Texture *textToSurface(char *text, SDL_Renderer *screen, SDL_Rect *textRect,
   SDL_Surface *textSurface = TTF_RenderText(defaultFont, textInfo, fg, bg);
   SDL_Texture *textTexture;
   TTF_CloseFont(defaultFont);
-
   return SDL_CreateTextureFromSurface(screen, textSurface);
 }
 double sawTooth(double x, double y) {
   double a = 5;
-  return fabs(modf(x, &a));
+  return fabsl(modf(x, &a));
 }
-double circle(double x, double y) { return sqrt(x * x + y * y) - 1; }
-double comp(double x, double y) {
-  double _Complex z = x + I * y;
-  double _Complex c = ((double)ganimation / 100) *10* (I);
+long double circle(long double x, long double y) {
+  return sqrt(x * x + y * y) - 1;
+}
+long double comp(long double x, long double y) {
+  double _Complex z = 0;//x + I * y;
+  double _Complex c = (x + I * y)*((double)ganimation / 100) ;
   for (int i = 0; i < giterator; i++) {
-    z = z* z *z* z*z + c;
+    z = z*z +c;
   }
   return cabs(z);
 }
@@ -264,28 +270,30 @@ void renderText(SDL_Renderer *screen, settings *settings, corner corner,
 }
 void Render(SDL_Renderer *screen, settings *settings) {
   // clear screen
-  int screenHeight = settings->screenHeight;
   int screenWidth = settings->screenWidth;
   SDL_SetRenderDrawBlendMode(screen, SDL_BLENDMODE_BLEND);
   SDL_SetRenderDrawColor(screen, 0x11, 0x11, 0x11, 200);
   SDL_RenderClear(screen);
 
-  double plotterWidth = fabs(settings->x_end - settings->x_start);
-  double plotterHeight = fabs(settings->y_end - settings->y_start);
+  double plotterWidth = fabsl(settings->x_end - settings->x_start);
+  double plotterHeight = fabsl(settings->y_end - settings->y_start);
   // plot
   SDL_SetRenderDrawColor(screen, 0xFF, 0xFF, 0xFF, 100);
 
   // vertical lines
   for (int i = settings->x_start; i <= settings->x_end; i++) {
-    SDL_RenderDrawLineF(
-        screen, (i - settings->x_start) / plotterWidth * screenWidth, 0,
-        (i - settings->x_start) / plotterWidth * screenWidth, screenHeight);
+    SDL_RenderDrawLineF(screen,
+                        (i - settings->x_start) / plotterWidth * screenWidth, 0,
+                        (i - settings->x_start) / plotterWidth * screenWidth,
+                        settings->screenHeight);
   }
   // horizontal lines
   for (int i = settings->y_end; i >= settings->y_start; i--) {
     SDL_RenderDrawLineF(
-        screen, 0, (settings->y_end - i) / plotterHeight * screenHeight,
-        screenWidth, (settings->y_end - i) / plotterHeight * screenHeight);
+        screen, 0,
+        (settings->y_end - i) / plotterHeight * settings->screenHeight,
+        screenWidth,
+        (settings->y_end - i) / plotterHeight * settings->screenHeight);
   }
 
   // plot functions
@@ -295,49 +303,51 @@ void Render(SDL_Renderer *screen, settings *settings) {
   SDL_Texture *textTexture;
   SDL_Rect tempTextRect = textRect;
 
-  sprintf(textInfo, "x_start: %.3g x_end:%.3g", settings->x_start,
+  sprintf(textInfo, "x_start: %.3Lg x_end:%.3Lg", settings->x_start,
           settings->x_end);
   renderText(screen, settings, topLeft, textInfo);
-  sprintf(textInfo, "y_start: %.3g y_end:%.3g", settings->y_start,
+  sprintf(textInfo, "y_start: %.3Lg y_end:%.3Lg", settings->y_start,
           settings->y_end);
   renderText(screen, settings, topLeft, textInfo);
   sprintf(textInfo, "c=%.2f", (float)ganimation / 100);
   renderText(screen, settings, topLeft, textInfo);
   sprintf(textInfo, "i=%d", giterator);
   renderText(screen, settings, topLeft, textInfo);
-
+  // render current
   int mouseX, mouseY;
-  double projectedMouseX, projectedMouseY;
+  double projectedMouseX, projectedMouseY, projectedMouseX2, projectedMouseY2;
   SDL_GetMouseState(&mouseX, &mouseY);
   projectedMouseX = (((double)mouseX / screenWidth) * plotterWidth +
                      settings->x_start); // perceived X
   projectedMouseY =
-      -(((double)mouseY / screenHeight) * plotterHeight - settings->y_end);
+      -(((double)mouseY / settings->screenHeight) * plotterHeight -
+        settings->y_end);
   sprintf(textInfo, "mouse x: %.3f mouse y:%.3f", projectedMouseX,
           projectedMouseY);
   renderText(screen, settings, topRight, textInfo);
+  //
   projectedMouseX = (((double)settings->mouseX / screenWidth) * plotterWidth +
                      settings->x_start); // perceived X
   projectedMouseY =
-      -(((double)settings->mouseY / screenHeight) * plotterHeight -
+      -(((double)settings->mouseY / settings->screenHeight) * plotterHeight -
+        settings->y_end);
+  projectedMouseX2 = (((double)settings->mouseX2 / screenWidth) * plotterWidth +
+                      settings->x_start); // perceived X
+  projectedMouseY2 =
+      -(((double)settings->mouseY2 / settings->screenHeight) * plotterHeight -
         settings->y_end);
   sprintf(textInfo, "mouse x1: %.3f mouse y1:%.3f", projectedMouseX,
           projectedMouseY);
   renderText(screen, settings, topRight, textInfo);
-  projectedMouseX = (((double)settings->mouseX2 / screenWidth) * plotterWidth +
-                     settings->x_start); // perceived X
-  projectedMouseY =
-      -(((double)settings->mouseY2 / screenHeight) * plotterHeight -
-        settings->y_end);
-  sprintf(textInfo, "mouse x2: %.3f mouse y2:%.3f", projectedMouseX,
-          projectedMouseY);
+  sprintf(textInfo, "mouse x2: %.3f mouse y2:%.3f", projectedMouseX2,
+          projectedMouseY2);
   renderText(screen, settings, topRight, textInfo);
+
   float fps = 1000 / ((float)SDL_GetTicks() - (float)settings->lastTick);
   sprintf(textInfo, "FPS: %f/%d", fps, FPS);
   renderText(screen, settings, bottomRight, textInfo);
 
   SDL_RenderPresent(screen);
-  
 
   free(textInfo);
 }
@@ -346,8 +356,8 @@ int plot(SDL_Renderer *screen, settings *settings) {
   int screenWidth;
   SDL_GetRendererOutputSize(screen, &screenWidth, &screenHeight);
   SDL_SetRenderDrawBlendMode(screen, SDL_BLENDMODE_BLEND);
-  double plotterWidth = fabs(settings->x_end - settings->x_start);
-  double plotterHeight = fabs(settings->y_end - settings->y_start);
+  double plotterWidth = fabsl(settings->x_end - settings->x_start);
+  double plotterHeight = fabsl(settings->y_end - settings->y_start);
   double heightRatio = screenHeight / plotterHeight;
   double widthRatio = screenWidth / plotterWidth;
   double virtualX;
@@ -397,7 +407,7 @@ int plot(SDL_Renderer *screen, settings *settings) {
               }
               break;
             case outLine:
-              if (fabs(currentFunction->f(virtualX, virtualY)) < tolerance) {
+              if (fabsl(currentFunction->f(virtualX, virtualY)) < tolerance) {
                 SDL_RenderDrawPointF(screen, projectedVirtualX,
                                      projectedVirtualY);
               }
@@ -419,11 +429,8 @@ int plot(SDL_Renderer *screen, settings *settings) {
                                 widthRatio; // x values on screen
             projectedVirtualY = (settings->y_end - virtualY) * heightRatio;
             long int value = (currentFunction->f(virtualX, virtualY));
-            SDL_Color colour=hue2rgb(value, 255, 255);
-            SDL_SetRenderDrawColor(
-                screen, colour.r,
-                colour.g,
-                colour.b, 0xA0);
+            SDL_Color colour = hue2rgb(value, 255, 255);
+            SDL_SetRenderDrawColor(screen, colour.r, colour.g, colour.b, 0xA0);
             SDL_RenderDrawPointF(screen, projectedVirtualX, projectedVirtualY);
           }
         }
@@ -437,7 +444,7 @@ int plot(SDL_Renderer *screen, settings *settings) {
   return '\0';
 }
 int setFunction(function *func, char *name, function *prev, function *next,
-                double (*f)(double, double), SDL_bool visible,
+                long double (*f)(long double, long double), SDL_bool visible,
                 SDL_Colour colour, plotType plotType,
                 functionType functionType) {
   func->colour = colour;
@@ -450,9 +457,8 @@ int setFunction(function *func, char *name, function *prev, function *next,
   func->functionType = functionType;
   return EXIT_SUCCESS;
 }
-int main(int argc, char *argv[])
 
-{
+int main(int argc, char *argv[]) {
 
   if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
     printf("error initializing SDL: %s\n", SDL_GetError());
@@ -471,7 +477,7 @@ int main(int argc, char *argv[])
   setFunction(&settings.functions[0], "saw tooth", NULL, &settings.functions[1],
               circle, SDL_FALSE, red, filled, rinr);
   setFunction(&settings.functions[1], "circle", &settings.functions[0],
-              &settings.functions[2], comp2, SDL_FALSE, green, outLine, cinr);
+              &settings.functions[2], comp, SDL_FALSE, green, outLine, cinr);
   setFunction(&settings.functions[2], "mandelbrot", &settings.functions[1],
               NULL, comp, SDL_TRUE, white, outLine, cinr);
 
